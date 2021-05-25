@@ -32,6 +32,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <utime.h>
+#include<iostream>
 #ifdef __linux__
 #include <sys/fsuid.h>
 #endif
@@ -62,9 +63,49 @@ using namespace std::placeholders;
 namespace encfs {
 
 #define GET_FN(ctx, finfo) (ctx)->getNode((void *)(uintptr_t)(finfo)->fh)
+#define OverfsPidPath "/var/run/overlayfspid"
 
+static pid_t ovlPid;
 static EncFS_Context *context() {
   return (EncFS_Context *)fuse_get_context()->private_data;
+}
+
+static pid_t accesserPid() {
+  return fuse_get_context()->pid;
+}
+
+static void readOverlayFsPid() {
+  int fd=open(OverfsPidPath,O_RDONLY);
+  char buf[32];
+  int len;
+  if (-1 != fd) {
+    len = read(fd, buf, sizeof(buf));
+    if (len > 0) {
+      buf[len] = 0;
+      ovlPid = (pid_t)atol(buf);
+    }
+    close(fd);
+  }
+}
+//return 1鉴权通过, 0鉴权失败
+static int checkAuthority() {
+  /*获取ovlPid*/
+  if (0 == ovlPid) {
+    readOverlayFsPid();
+
+    //overlayFs进程未启动时, 权限通过
+    if (0 == ovlPid) {
+      return 1;
+    }
+  }
+
+  pid_t accessPid = accesserPid();
+  if ((0 == accessPid) || (accessPid == ovlPid)) {
+    return 1;
+  }
+  
+  cout << "pid: " << accessPid << endl;
+  return 0;
 }
 
 /**
@@ -225,11 +266,17 @@ int _do_getattr(FileNode *fnode, struct stat *stbuf) {
 }
 
 int encfs_getattr(const char *path, struct stat *stbuf) {
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   return withFileNode("getattr", path, nullptr, bind(_do_getattr, _1, stbuf));
 }
 
 int encfs_fgetattr(const char *path, struct stat *stbuf,
                    struct fuse_file_info *fi) {
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   return withFileNode("fgetattr", path, fi, bind(_do_getattr, _1, stbuf));
 }
 
@@ -241,6 +288,9 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   (void)offset;
   (void)finfo;
 
+   if (0 == checkAuthority()) {
+    return -1;
+  }
   int res = ESUCCESS;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) {
@@ -287,6 +337,9 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
 int encfs_mknod(const char *path, mode_t mode, dev_t rdev) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  }
 
   if (isReadOnly(ctx)) {
     return -EROFS;
@@ -335,6 +388,10 @@ int encfs_mkdir(const char *path, mode_t mode) {
   fuse_context *fctx = fuse_get_context();
   EncFS_Context *ctx = context();
 
+  if (0 == checkAuthority()) {
+    return -1;
+  }
+
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -377,6 +434,10 @@ int encfs_unlink(const char *path) {
     return -EROFS;
   }
 
+  if (0 == checkAuthority()) {
+    return -1;
+  }
+
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) {
@@ -399,6 +460,10 @@ int _do_rmdir(EncFS_Context *, const string &cipherPath) {
 
 int encfs_rmdir(const char *path) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  }
+
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -443,6 +508,9 @@ int encfs_readlink(const char *path, char *buf, size_t size) {
  */
 int encfs_symlink(const char *to, const char *from) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  }
 
   if (isReadOnly(ctx)) {
     return -EROFS;
@@ -514,6 +582,10 @@ int encfs_link(const char *to, const char *from) {
     return -EROFS;
   }
 
+  if (0 == checkAuthority()) {
+    return -1;
+  }
+
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) {
@@ -535,6 +607,9 @@ int encfs_rename(const char *from, const char *to) {
     return -EROFS;
   }
 
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) {
@@ -555,6 +630,10 @@ int _do_chmod(EncFS_Context *, const string &cipherPath, mode_t mode) {
 
 int encfs_chmod(const char *path, mode_t mode) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  }
+  
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -578,6 +657,11 @@ int _do_truncate(FileNode *fnode, off_t size) { return fnode->truncate(size); }
 
 int encfs_truncate(const char *path, off_t size) {
   EncFS_Context *ctx = context();
+
+  if (0 == checkAuthority()) {
+    return -1;
+  }
+  
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -586,6 +670,9 @@ int encfs_truncate(const char *path, off_t size) {
 
 int encfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  } 
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -599,6 +686,9 @@ int _do_utime(EncFS_Context *, const string &cyName, struct utimbuf *buf) {
 
 int encfs_utime(const char *path, struct utimbuf *buf) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -623,6 +713,9 @@ int _do_utimens(EncFS_Context *, const string &cyName,
 
 int encfs_utimens(const char *path, const struct timespec ts[2]) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -631,7 +724,9 @@ int encfs_utimens(const char *path, const struct timespec ts[2]) {
 
 int encfs_open(const char *path, struct fuse_file_info *file) {
   EncFS_Context *ctx = context();
-
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   if (isReadOnly(ctx) &&
       (((file->flags & O_WRONLY) != 0) || ((file->flags & O_RDWR) != 0))) {
     return -EROFS;
@@ -665,6 +760,9 @@ int encfs_open(const char *path, struct fuse_file_info *file) {
 }
 
 int encfs_create(const char *path, mode_t mode, struct fuse_file_info *file) {
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   int res = encfs_mknod(path, mode, 0);
   if (res != 0) {
     return res;
@@ -696,6 +794,9 @@ int _do_flush(FileNode *fnode) {
 
 // Called on each close() of a file descriptor
 int encfs_flush(const char *path, struct fuse_file_info *fi) {
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   return withFileNode("flush", path, fi, bind(_do_flush, _1));
 }
 
@@ -706,7 +807,9 @@ requires a cache layer.
  */
 int encfs_release(const char *path, struct fuse_file_info *finfo) {
   EncFS_Context *ctx = context();
-
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   try {
     auto fnode = ctx->lookupFuseFh(finfo->fh);
     ctx->eraseNode(path, fnode);
@@ -738,6 +841,9 @@ int _do_fsync(FileNode *fnode, int dataSync) {
 
 int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  } 
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -767,7 +873,9 @@ int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
 // statfs works even if encfs is detached..
 int encfs_statfs(const char *path, struct statvfs *st) {
   EncFS_Context *ctx = context();
-
+  if (0 == checkAuthority()) {
+    return -1;
+  }
   int res = -EIO;
   try {
     (void)path;  // path should always be '/' for now..
@@ -799,6 +907,9 @@ int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags, uint32_t position) {
+  if (0 == checkAuthority()) {
+    return -1;
+  }                
   EncFS_Context *ctx = context();
   if (isReadOnly(ctx)) {
     return -EROFS;
@@ -815,6 +926,9 @@ int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  }    
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -831,6 +945,9 @@ int _do_getxattr(EncFS_Context *, const string &cyName, const char *name,
 }
 int encfs_getxattr(const char *path, const char *name, char *value, size_t size,
                    uint32_t position) {
+  if (0 == checkAuthority()) {
+    return -1;
+  }                     
   return withCipherPath(
       "getxattr", path,
       bind(_do_getxattr, _1, _2, name, (void *)value, size, position), true);
@@ -842,6 +959,9 @@ int _do_getxattr(EncFS_Context *, const string &cyName, const char *name,
 }
 int encfs_getxattr(const char *path, const char *name, char *value,
                    size_t size) {
+  if (0 == checkAuthority()) {
+    return -1;
+  }                   
   return withCipherPath("getxattr", path,
                         bind(_do_getxattr, _1, _2, name, (void *)value, size),
                         true);
@@ -860,6 +980,9 @@ int _do_listxattr(EncFS_Context *, const string &cyName, char *list,
 }
 
 int encfs_listxattr(const char *path, char *list, size_t size) {
+  if (0 == checkAuthority()) {
+    return -1;
+  }  
   return withCipherPath("listxattr", path,
                         bind(_do_listxattr, _1, _2, list, size), true);
 }
@@ -876,6 +999,9 @@ int _do_removexattr(EncFS_Context *, const string &cyName, const char *name) {
 
 int encfs_removexattr(const char *path, const char *name) {
   EncFS_Context *ctx = context();
+  if (0 == checkAuthority()) {
+    return -1;
+  }  
   if (isReadOnly(ctx)) {
     return -EROFS;
   }

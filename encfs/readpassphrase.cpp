@@ -84,15 +84,17 @@ restart:
    * Read and write to /dev/tty if available.  If not, read from
    * stdin and write to stderr unless a tty is required.
    */
-  if ((input = output = open(_PATH_TTY, O_RDWR)) == -1) {
+  /*if ((input = output = open(_PATH_TTY, O_RDWR)) == -1) {
     if ((flags & RPP_REQUIRE_TTY) != 0) {
       errno = ENOTTY;
       return (nullptr);
     }
     input = STDIN_FILENO;
     output = STDERR_FILENO;
-  }
+  }*/
 
+  input = STDIN_FILENO;
+  output = STDOUT_FILENO;
   /*
    * Catch signals that would otherwise cause the user to end
    * up with echo turned off in the shell.  Don't worry about
