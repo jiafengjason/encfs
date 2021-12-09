@@ -1456,11 +1456,15 @@ CipherKey EncFSConfig::getUserKey(bool useStdin) {
   char *res;
 
   if (useStdin) {
-    res = fgets(passBuf, sizeof(passBuf), stdin);
-    // Kill the trailing newline.
-    if (passBuf[strlen(passBuf) - 1] == '\n') {
-      passBuf[strlen(passBuf) - 1] = '\0';
+    res = getenv("BOXPASS");
+    if (NULL != res) {
+        snprintf(passBuf, MaxPassBuf, "%s", res);
     }
+    //res = fgets(passBuf, sizeof(passBuf), stdin);
+    //// Kill the trailing newline.
+    //if (passBuf[strlen(passBuf) - 1] == '\n') {
+    //  passBuf[strlen(passBuf) - 1] = '\0';
+    //}
   } else {
     // xgroup(common)
     res = readpassphrase(_("EncFS Password: "), passBuf, sizeof(passBuf),
