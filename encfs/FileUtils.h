@@ -85,6 +85,8 @@ struct EncFS_Opts {
 
   std::string passwordProgram;  // path to password program (or empty)
   bool useStdin;  // read password from stdin rather then prompting
+  //FUNC-ENV-PASSWORD
+  bool useEnv;  // read password from env rather then stdin
   bool annotate;  // print annotation line prompt to stderr.
 
   bool ownerCreate;  // set owner of new files to caller

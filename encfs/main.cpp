@@ -224,6 +224,8 @@ static bool processArgs(int argc, char *argv[],
   out->opts->forceDecode = false;
   out->opts->ownerCreate = false;
   out->opts->useStdin = false;
+  //FUNC-ENV-PASSWORD
+  out->opts->useEnv = false;
   out->opts->annotate = false;
   out->opts->reverseEncryption = false;
   out->opts->requireMac = false;
@@ -284,12 +286,14 @@ static bool processArgs(int argc, char *argv[],
     // 'i' : idle-timeout, takes argument
     // 'm' : mount-on-demand
     // 'S' : password from stdin
+    // 'E' : password from env
     // 'o' : arguments meant for fuse
     // 't' : syslog tag
     // 'c' : configuration file
     // 'u' : unmount
+    //FUNC-ENV-PASSWORD
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:t:c:u", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfvdmEi:o:t:c:u", long_options, &option_index);
 
     if (res == -1) {
       break;
@@ -307,6 +311,10 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 'S':
         out->opts->useStdin = true;
+        break;
+      //FUNC-ENV-PASSWORD
+      case 'E':
+        out->opts->useEnv = true;
         break;
       case 't':
         out->syslogTag = optarg;

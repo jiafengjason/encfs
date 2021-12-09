@@ -94,6 +94,8 @@ struct EncFSConfig {
   }
 
   CipherKey getUserKey(bool useStdin);
+  //FUNC-ENV-PASSWORD
+  CipherKey getUserKey(bool useStdin, bool useEnv);
   CipherKey getUserKey(const std::string &passwordProgram,
                        const std::string &rootDir);
   CipherKey getNewUserKey();

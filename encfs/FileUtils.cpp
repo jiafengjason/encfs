@@ -85,6 +85,8 @@ static const int ParanoiaKDFDuration = 3000;  // 3 seconds
 static const char ENCFS_ENV_ROOTDIR[] = "encfs_root";
 static const char ENCFS_ENV_STDOUT[] = "encfs_stdout";
 static const char ENCFS_ENV_STDERR[] = "encfs_stderr";
+//FUNC-ENV-PASSWORD
+static const char ENCFS_ENV_BOXPASS[] = "BOXPASS";
 
 // static int V5SubVersion = 20040518;
 // static int V5SubVersion = 20040621; // add external IV chaining
@@ -1456,15 +1458,50 @@ CipherKey EncFSConfig::getUserKey(bool useStdin) {
   char *res;
 
   if (useStdin) {
-    res = getenv("BOXPASS");
-    if (NULL != res) {
-        snprintf(passBuf, MaxPassBuf, "%s", res);
+    res = fgets(passBuf, sizeof(passBuf), stdin);
+    // Kill the trailing newline.
+    if (passBuf[strlen(passBuf) - 1] == '\n') {
+      passBuf[strlen(passBuf) - 1] = '\0';
     }
-    //res = fgets(passBuf, sizeof(passBuf), stdin);
-    //// Kill the trailing newline.
-    //if (passBuf[strlen(passBuf) - 1] == '\n') {
-    //  passBuf[strlen(passBuf) - 1] = '\0';
-    //}
+  } else {
+    // xgroup(common)
+    res = readpassphrase(_("EncFS Password: "), passBuf, sizeof(passBuf),
+                         RPP_ECHO_OFF);
+  }
+
+  CipherKey userKey;
+  if (res == nullptr) {
+    cerr << _("fatal: error reading password\n");
+    exit(1);
+  } else {
+    userKey = makeKey(passBuf, strlen(passBuf));
+  }
+
+  memset(passBuf, 0, sizeof(passBuf));
+
+  return userKey;
+}
+
+//FUNC-ENV-PASSWORD
+CipherKey EncFSConfig::getUserKey(bool useStdin, bool useEnv) {
+  char passBuf[MaxPassBuf];
+  char *res;
+
+  memset(passBuf, 0, MaxPassBuf);
+  if (useEnv) {
+    char *boxPass = nullptr;
+    res = getenv(ENCFS_ENV_BOXPASS);
+    if (res != nullptr)
+    {
+      snprintf(passBuf, MaxPassBuf - 1,"%s", res);
+    } 
+  }
+  else if (useStdin) {
+    res = fgets(passBuf, sizeof(passBuf), stdin);
+    // Kill the trailing newline.
+    if (passBuf[strlen(passBuf) - 1] == '\n') {
+      passBuf[strlen(passBuf) - 1] = '\0';
+    }
   } else {
     // xgroup(common)
     res = readpassphrase(_("EncFS Password: "), passBuf, sizeof(passBuf),
@@ -1666,7 +1703,9 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
       if (opts->annotate) {
         cerr << "$PROMPT$ passwd" << endl;
       }
-      userKey = config->getUserKey(opts->useStdin);
+      //FUNC-ENV-PASSWORD
+      //userKey = config->getUserKey(opts->useStdin);
+      userKey = config->getUserKey(opts->useStdin, opts->useEnv);
     } else {
       userKey = config->getUserKey(opts->passwordProgram, opts->rootDir);
     }
