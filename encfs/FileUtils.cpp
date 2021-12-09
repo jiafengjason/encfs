@@ -1489,7 +1489,6 @@ CipherKey EncFSConfig::getUserKey(bool useStdin, bool useEnv) {
 
   memset(passBuf, 0, MaxPassBuf);
   if (useEnv) {
-    char *boxPass = nullptr;
     res = getenv(ENCFS_ENV_BOXPASS);
     if (res != nullptr)
     {
