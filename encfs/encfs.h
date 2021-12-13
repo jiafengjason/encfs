@@ -58,6 +58,8 @@ static __inline int setfsgid(gid_t gid) {
 }
 #endif
 
+bool init_encfs_pidinfo();
+
 int encfs_getattr(const char *path, struct stat *stbuf);
 int encfs_fgetattr(const char *path, struct stat *stbuf,
                    struct fuse_file_info *fi);

@@ -32,7 +32,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <utime.h>
-#include<iostream>
+#include <iostream>
 #ifdef __linux__
 #include <sys/fsuid.h>
 #endif
@@ -47,6 +47,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <map>
 
 #include "Context.h"
 #include "DirNode.h"
@@ -64,14 +65,97 @@ namespace encfs {
 
 #define GET_FN(ctx, finfo) (ctx)->getNode((void *)(uintptr_t)(finfo)->fh)
 #define OverfsPidPath "/var/run/overlayfspid"
+#define MAX_PATH_STR  1024
+#define MAX_PROCESS_NAME 64
+#define INVALID_PID -1
+
+#define RET_DENY  0
+#define RET_ALLOW 1
 
 static pid_t ovlPid;
+static pid_t encfsPid = 0;
+static pid_t managePid = 0;
+
+typedef struct EncFS_Process_Info {
+  pid_t pid;
+  char procName[MAX_PROCESS_NAME];
+
+  pid_t parentPid;
+  char parentProcName[MAX_PROCESS_NAME];
+
+  int action;
+}*PEncFS_Process_Info;
+
+typedef map<pid_t, EncFS_Process_Info> EncFS_Map_Pid_ProcessInfo;
+EncFS_Map_Pid_ProcessInfo gPidProcessInfoMap;
+
 static EncFS_Context *context() {
   return (EncFS_Context *)fuse_get_context()->private_data;
 }
 
 static pid_t accesserPid() {
   return fuse_get_context()->pid;
+}
+
+static pid_t getParentPid(pid_t pid)
+{
+  char statPath[MAX_PATH_STR] = {0};
+  char buf[MAX_PATH_STR] = {0};
+  char procName[MAX_PATH_STR]={0};
+  int fpid=0;
+  struct stat st;
+  ssize_t ret =0;
+
+  if (pid < 0)
+    return INVALID_PID;
+
+  sprintf(statPath,"/proc/%d/stat",pid);
+
+  if(stat(statPath,&st)!=0)
+  {
+      return INVALID_PID; 
+  }
+
+  FILE * fp = fopen(statPath,"r");
+  ret += fread(buf + ret,1,300-ret,fp);
+  fclose(fp);
+
+  sscanf(buf,"%*d %*c%s %*c %d %*s",procName,&fpid);
+  procName[strlen(procName)-1]='\0';
+
+  return fpid;
+}
+
+static int checkCurProcessByPid(pid_t pid)
+{
+  EncFS_Map_Pid_ProcessInfo::iterator iter = gPidProcessInfoMap.find(pid);
+  if (iter != gPidProcessInfoMap.end())
+  {
+    VLOG(1) << "gPidProcessInfoMap[pid].pid " << gPidProcessInfoMap[pid].pid;
+    VLOG(1) << "gPidProcessInfoMap[pid].parentPid " << gPidProcessInfoMap[pid].parentPid;
+    VLOG(1) << "gPidProcessInfoMap[pid].action " << gPidProcessInfoMap[pid].action;
+    return gPidProcessInfoMap[pid].action;
+  }
+  
+  EncFS_Process_Info encfsProcInfo;
+  memset(&encfsProcInfo, 0, sizeof(encfsProcInfo));
+  encfsProcInfo.pid = pid;
+  encfsProcInfo.parentPid = getParentPid(pid);
+
+  if ((encfsProcInfo.pid == managePid) ||
+       (encfsProcInfo.parentPid == managePid))
+  {
+    encfsProcInfo.action = RET_ALLOW; 
+    gPidProcessInfoMap.insert(EncFS_Map_Pid_ProcessInfo::value_type(pid, encfsProcInfo));
+  }
+  else
+    encfsProcInfo.action = RET_DENY;
+
+  
+  VLOG(1) << "encfsProcInfo.pid " << encfsProcInfo.pid;
+  VLOG(1) << "encfsProcInfo.parentPid " << encfsProcInfo.parentPid;
+  VLOG(1) << "encfsProcInfo.action " << encfsProcInfo.action;
+  return encfsProcInfo.action;
 }
 
 static void readOverlayFsPid() {
@@ -87,25 +171,11 @@ static void readOverlayFsPid() {
     close(fd);
   }
 }
-//return 1鉴权通过, 0鉴权失败
+//return 1閴存潈閫氳繃, 0閴存潈澶辫触
 static int checkAuthority() {
-  /*获取ovlPid*/
-  if (0 == ovlPid) {
-    readOverlayFsPid();
-
-    //overlayFs进程未启动时, 权限通过
-    if (0 == ovlPid) {
-      return 1;
-    }
-  }
-
   pid_t accessPid = accesserPid();
-  if ((0 == accessPid) || (accessPid == ovlPid)) {
-    return 1;
-  }
-  
-  cout << "pid: " << accessPid << endl;
-  return 0;
+
+  return ((RET_ALLOW == checkCurProcessByPid(accessPid)) ? 1:0 );
 }
 
 /**
@@ -229,6 +299,16 @@ static int withFileNode(const char *opName, const char *path,
   return res;
 }
 
+bool init_encfs_pidinfo()
+{
+  encfsPid = getpid();
+  managePid = getppid();
+
+  if (encfsPid < 0 || managePid < 0)
+    return false;
+
+  return true; 
+}
 /*
     The log messages below always print encrypted filenames, not
     plaintext.  This avoids possibly leaking information to log files.

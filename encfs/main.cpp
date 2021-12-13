@@ -128,7 +128,6 @@ struct EncFS_Args {
 };
 
 static int oldStderr = STDERR_FILENO;
-
 }  // namespace encfs
 
 static void usage(const char *name) {
@@ -667,6 +666,12 @@ int main(int argc, char *argv[]) {
   bindtextdomain(PACKAGE, LOCALEDIR);
   textdomain(PACKAGE);
 #endif
+
+  if(!encfs::init_encfs_pidinfo())
+  {
+    cerr << "Init encfs pid info failed" << endl;
+    return EXIT_FAILURE;
+  }
 
   // anything that comes from the user should be considered tainted until
   // we've processed it and only allowed through what we support.
