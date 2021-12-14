@@ -688,7 +688,7 @@ static int do_chpasswd(bool useStdin, bool annotate, bool checkOnly, int argc,
     if (annotate) cerr << "$PROMPT$ new_passwd" << endl;
     userKey = config->getUserKey(true);
   } else
-    userKey = config->getNewUserKey();
+    userKey = config->getNewUserKey(false);
 
   // re-encode the volume key using the new user key and write it out..
   int result = EXIT_FAILURE;

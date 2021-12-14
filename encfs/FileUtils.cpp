@@ -1232,7 +1232,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   } else if (!passwordProgram.empty()) {
     userKey = config->getUserKey(passwordProgram, rootDir);
   } else {
-    userKey = config->getNewUserKey();
+    userKey = config->getNewUserKey(opts->useEnv);
   }
 
   cipher->writeKey(volumeKey, encodedKey, userKey);
@@ -1621,10 +1621,21 @@ CipherKey EncFSConfig::getUserKey(const std::string &passProg,
   return result;
 }
 
-CipherKey EncFSConfig::getNewUserKey() {
+CipherKey EncFSConfig::getNewUserKey(bool useEnv) {
   CipherKey userKey;
+  char *res;
   char passBuf[MaxPassBuf];
   char passBuf2[MaxPassBuf];
+
+  if (useEnv) {
+    res = getenv(ENCFS_ENV_BOXPASS);
+    if (res != nullptr)
+    {
+      snprintf(passBuf, MaxPassBuf - 1,"%s", res);
+      userKey = makeKey(passBuf, strlen(passBuf));
+      return userKey;
+    }
+  }
 
   do {
     // xgroup(common)
