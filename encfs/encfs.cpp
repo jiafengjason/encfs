@@ -107,7 +107,7 @@ static pid_t getParentPid(pid_t pid)
   ssize_t ret =0;
 
   if (pid < 0)
-    return INVALID_PID;
+      return INVALID_PID;
 
   sprintf(statPath,"/proc/%d/stat",pid);
 
@@ -121,7 +121,10 @@ static pid_t getParentPid(pid_t pid)
   fclose(fp);
 
   sscanf(buf,"%*d %*c%s %*c %d %*s",procName,&fpid);
-  procName[strlen(procName)-1]='\0';
+
+  if (strlen(procName) > 0) {
+      procName[strlen(procName)-1]='\0';
+  }
 
   return fpid;
 }
@@ -171,9 +174,13 @@ static void readOverlayFsPid() {
     close(fd);
   }
 }
-//return 1閴存潈閫氳繃, 0閴存潈澶辫触
+
 static int checkAuthority() {
   pid_t accessPid = accesserPid();
+
+  if (accessPid == 0) {
+      return 1;
+  }
 
   return ((RET_ALLOW == checkCurProcessByPid(accessPid)) ? 1:0 );
 }
